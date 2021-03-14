@@ -2,23 +2,28 @@ import discord
 from discord.ext import commands, tasks
 import random
 
-command_prefix = "."
-intents = discord.Intents(messages = True, guilds = True, reactions = True, members = True, presences = True)
-client = commands.Bot(command_prefix=command_prefix, intents=intents)
+"""
+to do: 
+- make bot store separate values (e.g. response dicts, probabilities) for separate guilds
+"""
 
-DEFAULT_ACCURACY = 10
-client.accuracy = DEFAULT_ACCURACY
-DEFAULT_CELEBRATION_PROBABILITY = 25
-client.celebration_probability = DEFAULT_CELEBRATION_PROBABILITY
+config = {
+	"default_accuracy": 10,
+	"default_celebration_probability": 25,
+	"command_prefix": ".",
+	"victory_message_filename": "victory_msgs.csv",
+	"csv_delimiter": ",,," #cursed delimiter?
+	}
 
-class WeightDict:
+class WeightDict: #A dictionary where all the values are integer weights. A total weight is stored along with the object so you don't have to calculate it every time
 	def __init__(self, d): #to be clear, d stands for dictionary
 		self.d = d
 		self.total_weight = 0
 
 		#self.total_weight is set to be the total of all of the weights in the dict
-		for key in d:
-			self.total_weight += d[key]
+		for key in self.d:
+			self.d[key] = int(self.d[key]) #casts the values to int to be safe
+			self.total_weight += self.d[key]
 
 	def pick_key(self):
 		"""quick gloss of how this algo works: Create an interval on a number line that stretches from 0 through to self.total_weight (minus 1 cause math reasons). 
@@ -29,66 +34,11 @@ class WeightDict:
 		random_target = random.randint(0, self.total_weight)
 		counter = 0
 		for key in self.d:
-			weight = self.d[key]
+			weight = int(self.d[key])
 			if random_target in range(counter, counter + weight): #the smaller intervals I was talking about above are represented as range(counter, counter + weight)
 				return key #function call ends if return ever reached
 			else:
-				counter += weight
-
-victory_msgs = WeightDict({"All your heads look bloody twelve feet tall.": 10,
-				"G'day!": 10,
-				"Wave goodbye to your head!": 10,
-				"You'd best keep lying down!": 10,
-				"Ah, I'm sorry, mate.": 10,
-				"That funeral ain't gonna be open casket!": 10,
-				"I see ya.": 10,
-				"You shouldn't have even gotten outta bed.": 10,
-				"This is getting too easy, mate.": 10,
-				"How's about ya call it a day?": 10,
-				"This is getting embarrassing.": 50,
-				"It's only gonna get worse, mate.": 10,
-				"I'm just getting warmed up.": 10,
-				"That'll slow ya down, ya twitchy hooligan!": 10,
-				"Gotcha, ya spastic little gremlin!": 10,
-				"Oi, lend us yer shovel, so I can dig yer grave!": 10,
-				"Dom-in-ated, ya cactus-eatin' egghead!": 10,
-				"Back to the drawin' board, genius!": 10,
-				"Not so smart with yer brains outside yer head, are ya?": 10,
-				"Nice try, mate, but I'm the best!": 50,
-				"You're making this so easy, I'm actually getting worse.": 10,
-				"All right!": 10,
-				"Piece of piss!": 10,
-				"Spot on!": 10,
-				"I'm great. You're dead. I think we're done here.": 30,
-				"Here's a touchin' story. Once upon a time you died, and I lived happily ever after. The end.": 50,
-				"Not so smug now, are ya?": 10,
-				"I suspect you'll keep yer big mouth shut now.": 10,
-				"Nothing personal, mate.": 10,
-				"God Save the Queen!": 50,
-				"Now that's downright embarrassing": 10,
-				"That's how we do it in the bush!": 40,
-				"Sniping's a good job, mate!": 50,
-				"All in a day's work.": 10,
-				"I told ya sniping was a good job!": 10,
-				"I make it look easy": 10,
-				"Now that is how it's done!": 10,
-				"I could do this all day.": 30,
-				"Ahh, that's apples mate.": 10,
-				"You got blood on my knife, mate!": 10,
-				"A little of the ol' 'chop-chop'!": 10,
-				"Bloody hell, you're awful!": 10,
-				"That was too easy mate!": 50,
-				"No worries.": 10,
-				"Cheers, mate.": 10,
-				"Bonza.": 10,
-				"He he he. Barely broke a sweat!": 10,
-				"https://www.youtube.com/watch?v=oyA8EV9QbOQ": 10, #spyper and sny
-				"https://www.youtube.com/watch?v=9NZDwZbyDus": 10, #meet the sniper
-				"https://www.youtube.com/watch?v=ptW8S-mAbA4": 10, #christian brutal sniper theme
-				"https://www.youtube.com/watch?v=jPNkB5Sm7lw": 5, #sniper sees something unsightly
-				"https://www.youtube.com/watch?v=5tHUPv7SYdQ": 10 #snia piece of piss
-				
-				})
+				counter += weight #moves the starting point of the interval to prepare for next key
 
 class ProbabilityOutOfBoundsError(Exception):
 	pass
@@ -97,6 +47,38 @@ def read_token():
 	with open("token.txt", "r") as f:
 		lines = f.readlines()
 		return lines[0].strip()
+		
+def write_dict_into_csv(d, file_name, delimiter=config["csv_delimiter"]): 
+	with open(file_name, "w") as f:
+		f.write("") #clears the file
+	
+	with open(file_name, "a") as f:
+		for key in d:
+			f.write("{}{}{}\n".format(key, delimiter, d[key]))
+		
+def read_csv_into_dict(file_name, start_row=0, delimiter=config["csv_delimiter"]):
+	output_dict = {}
+	
+	with open(file_name, "r") as f:
+		lines = f.readlines() #puts the lines of the csv into the list "lines"
+		
+		for line_num in range(start_row, len(lines)):
+			line_str = lines[line_num]
+			line_list = line_str.split(delimiter) #for each line, splits it into a list
+			
+			new_key = line_list[0].strip() #the 0th and 1st entries in each list are prepared to be the key and value, respectively, in a new key/value pair
+			new_value = line_list[1].strip() #the stripping gets rid of whitespace and "\n"s and stuff
+			
+			output_dict[new_key] = new_value #adds the new key/value pair to the dict
+			
+	return output_dict
+
+#sets up bot, applies config	
+intents = discord.Intents(messages = True, guilds = True, reactions = True, members = True, presences = True) #set up intents
+client = commands.Bot(command_prefix=config["command_prefix"], intents=intents) #create bot
+client.accuracy = config["default_accuracy"] #sets bot accuracy
+client.celebration_probability = config["default_celebration_probability"] #sets bot celebration probability
+victory_msgs = WeightDict(read_csv_into_dict(config["victory_message_filename"])) #loads victory messages into proper WeightDict
 
 #============================ Below begins the actual bot stuff
 @client.event
@@ -114,10 +96,10 @@ async def on_member_remove(member):
 @client.event
 async def on_message_delete(message):
 	print("A message was deleted.")
-	if random.randint(1, 101) <= client.accuracy:
+	if random.randint(1, 100) <= client.accuracy: #might not be the most elegant way but whatever, I don't care. Yeah, it only properly deals with integer percentage probabilities. It'd be an easy fix probably but idc
 		print("Shot hit. Sniping...")
 		await message.channel.send("//s")
-		if random.randint(1,101) <= client.celebration_probability:
+		if random.randint(1,100) <= client.celebration_probability: #huh apparaently random.randint(a, b) includes b as a possibility
 			reply = victory_msgs.pick_key()
 			print("Printing victory message.")
 			print(reply)
@@ -125,12 +107,11 @@ async def on_message_delete(message):
 	else:
 		print("Shot missed.")
 		
-
 @client.command()
 async def ping(ctx):
 	await ctx.send("Pong! {}ms".format(round(client.latency * 1000)))
 
-#This command used to set bot sniping accuracy
+#set bot sniping accuracy
 @client.command(aliases=["accuracy", "a"])
 async def aim(ctx, new_accuracy="?"):
 	#reports the current accuracy if nothing or "?" is input
@@ -155,7 +136,7 @@ async def aim(ctx, new_accuracy="?"):
 			print("Accuracy cannot be set outside of [0,100]")
 			await ctx.send("My accuracy cannot be set outside of the range [0, 100], ya bloody simpleton!")
 
-#This command used to set bot celebration probability
+#set bot celebration probability
 @client.command(aliases=["v"])
 async def victory(ctx, new_celebration_probability="?"):
 	#reports the current celebration probability if nothing or "?" is input
@@ -171,14 +152,14 @@ async def victory(ctx, new_celebration_probability="?"):
 				raise ProbabilityOutOfBoundsError
 			#sets the celebration probability to the new value
 			client.celebration_probability = new_celebration_probability
-			print("Celebration probability set to {}%.".format(client.celebration_probability))
+			print("Victory speech probability set to {}%.".format(client.celebration_probability))
 			await ctx.send("Celebration probability set to {}%.".format(client.celebration_probability))
 		except ValueError:
 			print("Celebration probability cannot be set to non-int")
-			await ctx.send("My celebration probability cannot be set to a non-int, ya bloody simpleton!")
+			await ctx.send("My victory speech probability cannot be set to a non-int, ya bloody simpleton!")
 		except ProbabilityOutOfBoundsError:
 			print("Celebration probability cannot be set outside of [0,100]")
-			await ctx.send("My celebration probability cannot be set outside of the range [0, 100], ya bloody simpleton!")
+			await ctx.send("My victory speech probability cannot be set outside of the range [0, 100], ya bloody simpleton!")
 
 token = read_token()
 client.run(token)
